@@ -1,104 +1,173 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
 
-# C extensions
-*.so
+#include <Adafruit_Fingerprint.h>
+#include <SoftwareSerial.h>
+#include <Servo.h> //Add servo library
+#include <LiquidCrystal.h>
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+int getFingerprintIDez();
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+Servo servo1;//Define servo name / object
+LiquidCrystal lcd(12,11,7,6,5,4);
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+#define servoPin 9 //Define pin number to which servo motor is connected
+#define durationTime 3000 //Define the time it remains in the open position of the door lock (miliseconds)
+#define servoMin 0 //Open position
+#define servoMax 90 // Closed position
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
 
-# Translations
-*.mo
-*.pot
+SoftwareSerial mySerial(2, 3);
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
 
-# Flask stuff:
-instance/
-.webassets-cache
+void setup()  
+{
+  while (!Serial);  // For Yun/Leo/Micro/Zero/...
+  
+  Serial.begin(9600);
+  Serial.println("Adafruit finger detect test");
 
-# Scrapy stuff:
-.scrapy
+  servo1.attach(servoPin); //Define pin number of the servo
+  servo1.write(servoMax); //The position of the servo at the start of the program
 
-# Sphinx documentation
-docs/_build/
+  // set the data rate for the sensor serial port
+  finger.begin(57600);
+  
+  if (finger.verifyPassword()) {
+    Serial.println("Found fingerprint sensor!");
+  } else {
+    Serial.println("Did not find fingerprint sensor :(");
+    lcd.begin(16,20);
+    lcd.print("BEM VINDO");
+    lcd.setCursor(0,1);
+    lcd.print("COLOQUE DIGITAL");
+    while (1);
+  }
+  Serial.println("Waiting for valid finger...");
+  lcd.begin(16,20);
+  lcd.print("BEM VINDO");
+  lcd.setCursor(0,1);
+  lcd.print("COLOQUE DIGITAL");
+}
 
-# PyBuilder
-target/
+void loop()                     // run over and over again
+{
+  getFingerprintIDez();
+  delay(50);            //don't ned to run this at full speed.
+}
 
-# Jupyter Notebook
-.ipynb_checkpoints
+uint8_t getFingerprintID() {
+  uint8_t p = finger.getImage();
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.println("Image taken");
+      break;
+    case FINGERPRINT_NOFINGER:
+      Serial.println("No finger detected");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Communication error");
+      return p;
+    case FINGERPRINT_IMAGEFAIL:
+      Serial.println("Imaging error");
+      return p;
+    default:
+      Serial.println("Unknown error");
+      return p;
+  }
 
-# pyenv
-.python-version
+  // OK success!
 
-# celery beat schedule file
-celerybeat-schedule
+  p = finger.image2Tz();
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.println("Image converted");
+      break;
+    case FINGERPRINT_IMAGEMESS:
+      Serial.println("Image too messy");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Communication error");
+      return p;
+    case FINGERPRINT_FEATUREFAIL:
+      Serial.println("Could not find fingerprint features");
+      return p;
+    case FINGERPRINT_INVALIDIMAGE:
+      Serial.println("Could not find fingerprint features");
+      return p;
+    default:
+      Serial.println("Unknown error");
+      return p;
+  }
+  
+  // OK converted!
+  p = finger.fingerFastSearch();
+  if (p == FINGERPRINT_OK) {
+    Serial.println("Found a print match!");
+  } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+    Serial.println("Communication error");
+    return p;
+  } else if (p == FINGERPRINT_NOTFOUND) {
+    Serial.println("Did not find a match");
+    return p;
+  } else {
+    Serial.println("Unknown error");
+    return p;
+  }   
+  
+  // found a match!
+  Serial.print("Found ID #"); Serial.print(finger.fingerID); 
+  Serial.print(" with confidence ot "); Serial.println(finger.confidence); 
+}
 
-# SageMath parsed files
-*.sage.py
+// returns -1 if failed, otherwise returns ID #
+int getFingerprintIDez() {
+  uint8_t p = finger.getImage();
+  if (p != FINGERPRINT_OK) {
+    return -1;
+  }
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+  p = finger.image2Tz();
+  if (p != FINGERPRINT_OK) {
+    return -1;
+  }
 
-# Spyder project settings
-.spyderproject
-.spyproject
+  p = finger.fingerFastSearch();
+  if (p != FINGERPRINT_OK)  {
+    Serial.println("ACESSO NEGADO");
+    lcd.clear();
+    lcd.print("ACESSO NEGADO");
+    delay (4000);
+    lcd.clear();
+    lcd.print("BEM VINDO");
+    lcd.setCursor(0,1);
+    lcd.print("COLOQUE DIGITAL!");
+    return -1;
+  }
 
-# Rope project settings
-.ropeproject
+  servo1.write(servoMin); //If the fingerprint is correct open the door lock
+  delay(durationTime); //Keep the lock open for the defined duration
+  servo1.write(servoMax); //take the lock OFF again
+  if (finger.fingerID==5){
+    Serial.println("ACESSO PERMITIDO: DANIEL CHOU");
+    lcd.clear();
+    lcd.print("ACESSO PERMITIDO:");
+    lcd.setCursor(0,1);
+    lcd.print("DANIEL CHOU");
+    delay (4000);
+    lcd.clear();
+    lcd.print("BEM VINDO");
+    lcd.setCursor(0,1);
+    lcd.print("COLOQUE DIGITAL!");
+  }
+  if (finger.fingerID==4){
+    Serial.println("ACESSO PERMITIDO: DANIEL CHOU");
+    Serial.println("DEDO DO PANICO CUIDADO!!!!");
+  }
 
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
+  
+  
+  // found a match!
+  Serial.print("Found ID #"); Serial.print(finger.fingerID); 
+  Serial.print(" with confidence of "); Serial.println(finger.confidence);
+  return finger.fingerID; 
+}
